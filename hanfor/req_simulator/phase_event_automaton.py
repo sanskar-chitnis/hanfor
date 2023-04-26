@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import total_ordering
 
 import time
 from collections import defaultdict
@@ -57,6 +58,11 @@ class Phase:
         return isinstance(o, Phase) and o.sets == self.sets and \
                is_valid(Iff(o.state_invariant, self.state_invariant), solver_name=SOLVER_NAME, logic=LOGIC) and \
                is_valid(Iff(o.clock_invariant, self.clock_invariant), solver_name=SOLVER_NAME, logic=LOGIC)
+    
+    # NEW - orders two phases
+    @total_ordering
+    def __lt__(self, o:Phase):
+        return isinstance(o, Phase) and int(f"{o.sets}") > int(f"{self.sets}")
 
     def __hash__(self) -> int:
         return hash((self.sets))
@@ -139,6 +145,11 @@ class Transition:
     def __eq__(self, o: Transition) -> bool:
         return isinstance(o, Transition) and o.src == self.src and o.dst == self.dst and o.resets == self.resets and \
                is_valid(Iff(o.guard, self.guard), solver_name=SOLVER_NAME, logic=LOGIC)
+    
+    # NEW - orders two transitions
+    @total_ordering
+    def __lt__(self, o: Transition) -> bool:
+        return isinstance(o, Transition) and o.src == self.src and o.dst > self.dst
 
     def __hash__(self) -> int:
         return hash((self.src, self.dst, self.resets))
