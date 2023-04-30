@@ -1,8 +1,8 @@
 from unittest import TestCase
-from req_simulator.phase_event_automaton import PhaseEventAutomaton, Phase, Transition
+from req_simulator.phase_event_automaton import PhaseEventAutomaton, Phase, Transition, Sets
 from collections import defaultdict
 from pysmt.fnode import FNode
-from pysmt.shortcuts import TRUE, And, FALSE, Or, Not, Symbol, LT, GE, LE, is_valid, Iff, is_sat, get_env
+from pysmt.shortcuts import TRUE, And, FALSE, Or, Not, Symbol, LT, GE, LE, is_valid, Iff, is_sat, is_unsat, simplify
 
 # for testing
 from tests.test_req_simulator.test_counter_trace import testcases
@@ -89,13 +89,18 @@ def is_part_refined(pea: PhaseEventAutomaton, part: frozenset[Phase]) -> bool:
                             if t_i.dst == t_j.dst and t_i.resets != t_j.resets:
                                 return False
                     # 3
-                    if get_formula(transitions_i) != get_formula(transitions_j):
+                    if not check_transitions(transitions_i, transitions_j, j):
                         return False
     return True
 
-def get_formula(transitions: set[Transition]) -> FNode:
-    # sort the transitions so the formulas match if they are the same (transition ordering added)
-    return Or(*[And(transition.guard, transition.dst.state_invariant) for transition in sorted(transitions)])
+def check_transitions(transitions_i: set[Transition], transitions_j: set[Transition], j: Phase) -> bool:
+    # check weather all transitions are identical
+    if len(transitions_i) != len(transitions_j):
+        return False
+    check_trans = set()
+    for trans in transitions_i:
+        check_trans.add(Transition(j, trans.dst, trans.guard, trans.resets))
+    return len(transitions_j.intersection(check_trans)) != 0 and len(transitions_j.difference(check_trans)) == 0
 
 # refine partition - gets an non-refined partition and refines it
 def refine_partition(pea: PhaseEventAutomaton, part: frozenset[Phase]) -> set[frozenset[Phase]]:
@@ -112,6 +117,41 @@ def refine_partition(pea: PhaseEventAutomaton, part: frozenset[Phase]) -> set[fr
             parts_new.append([loc])
     return set([frozenset(i) for i in parts_new])
 
+def construct_reduced_pea(pea: PhaseEventAutomaton, parts: set[frozenset[Phase]]) -> PhaseEventAutomaton:
+    # create empty pea
+    red_pea = PhaseEventAutomaton()
+
+    # combine phases and add transitions - if transition already exists, dont't try to add it again
+    for src_part in parts:
+        src_phase = Phase(state_invariant=simplify(Or(*[loc.state_invariant for loc in src_part])),
+                          clock_invariant=list(src_part)[0].clock_invariant,
+                          sets=Sets(active=set().union(*[loc.sets.active for loc in src_part]),
+                                    gteq=set().union(*[loc.sets.gteq for loc in src_part]),
+                                    wait=set().union(*[loc.sets.wait for loc in src_part]),
+                                    less=set().union(*[loc.sets.less for loc in src_part])))
+        loc = list(src_part).pop()
+        for trans in pea.phases[loc]:
+            if trans not in red_pea.phases[src_phase]:
+                dst_part = get_dst_part(trans, parts)
+                dst_phase = Phase(state_invariant=simplify(Or(*[loc.state_invariant for loc in dst_part])),
+                                  clock_invariant=list(dst_part)[0].clock_invariant,
+                                  sets=Sets(active=set().union(*[loc.sets.active for loc in dst_part]),
+                                            gteq=set().union(*[loc.sets.gteq for loc in dst_part]),
+                                            wait=set().union(*[loc.sets.wait for loc in dst_part]),
+                                            less=set().union(*[loc.sets.less for loc in dst_part])))
+                red_pea.add_transition(Transition(src=src_phase,
+                                                  dst=dst_phase,
+                                                  guard=simplify(And(trans.guard, trans.dst.state_invariant)),
+                                                  resets=trans.resets))
+    return red_pea
+
+def get_dst_part(trans: Transition, parts: set[frozenset[Phase]]):
+    for part in parts:
+        for loc in part:
+            if loc == trans.dst:
+                return part
+    return frozenset()     
+
 # for testing
 expressions, ct_str, _ = testcases['absence_between']
 expressions_ = {k + '_': Symbol(v.symbol_name() + '_', v.symbol_type()) for k, v in expressions.items()}
@@ -123,15 +163,4 @@ print(init_parts)
 ref_parts = get_refined_partitions(pea=test_pea, parts=init_parts)
 print("\nThe refined partitions are:")
 print(ref_parts)
-
-# class TestPeaReduction(TestCase):
-
-#     # get a PEA
-#     def test_pea_reduction(pea: PhaseEventAutomaton):
-#         # find SCCs - initial set of partitions
-#         parts = initial_partitions(pea)
-#         # refine all partitions - get refined partitions
-#         parts = get_refined_partitions(parts)
-#         # construct pea from partitions
-#         # red_pea = construct_reduced_pea(parts)
-#         # check if original PEA and reduced PEA are "same"
+red_pea = construct_reduced_pea(test_pea, ref_parts)
