@@ -166,7 +166,7 @@ def get_dst_part(trans: Transition, parts: set[frozenset[Phase]]):
 class TestPEAReduction(TestCase):
     def test_pea_reduction(self):
         for testcase in testcases:
-            # print(testcase)
+            print(testcase)
             expressions, ct_str, _ = testcases[testcase]
             ct = CountertraceTransformer(expressions).transform(get_countertrace_parser().parse(ct_str))
             pea = build_automaton(ct)
