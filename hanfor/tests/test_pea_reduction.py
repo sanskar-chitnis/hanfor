@@ -180,8 +180,36 @@ class TestPEAReduction(TestCase):
             
             # number of locations in reduced pea are less than or equal to the number of locations OG
             self.assertLessEqual(len(red_pea.phases.keys()), len(pea.phases.keys()))
+            
+            # stats dump
+            print(f'Percentage of states reduced: {100 - ((len(red_pea.phases.keys())/len(pea.phases.keys())) * 100)}')
+            trans_og = 0
+            for trans in pea.phases:
+                trans_og += len(pea.phases[trans])
+            trans_red = 0
+            for trans in red_pea.phases:
+                trans_red += len(red_pea.phases[trans])
+            if trans_og == 0:
+                print("Percentage of transitions reduced: 0")
+            else:
+                print(f"Percentage of transitions reduced: {100 - ((trans_red/trans_og) * 100)}\n")
 
             # has same initial locations
             self.assertTrue(And(*[loc.state_invariant.Implies(Or(*[loc_red.state_invariant for loc_red in get_initial_locations(red_pea)])) for loc in get_initial_locations(pea)]))
             
-TestPEAReduction().test_pea_reduction()
+def demo():
+    TestPEAReduction().test_pea_reduction()
+
+    expressions, ct_str, _ = testcases['duration_bound_l_globally']
+    ct = CountertraceTransformer(expressions).transform(get_countertrace_parser().parse(ct_str))
+    pea = build_automaton(ct)
+    init_parts = initial_partitions(pea)
+    print("\nThe initial partitions are:")
+    print(init_parts)
+    ref_parts = get_refined_partitions(pea=pea, parts=init_parts)
+    print("\nThe refined partitions are:")
+    print(ref_parts)
+    red_pea = construct_reduced_pea(pea, ref_parts)
+    print("")
+
+demo()
