@@ -25,43 +25,44 @@ def initial_partitions(pea: PhaseEventAutomaton) -> set[frozenset[Phase]]:
     c = 1
     preorders = defaultdict(int)
 
-    return find_SCCs(pea, get_initial_locations(pea), s, p, c, preorders)
+    return find_SCCs(pea, get_initial_locations(pea), s, p, c, preorders, [])
 
 # Path-based strong component algorithm (https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm)
-def find_SCCs(pea: PhaseEventAutomaton, locs: list, s: list, p: list, c: int, preorders: defaultdict) -> set[frozenset[Phase]]:
+def find_SCCs(pea: PhaseEventAutomaton, locs: list, s: list, p: list, c: int, preorders: defaultdict, discovered: list) -> set[frozenset[Phase]]:
     scc = set([])
-    if len(locs) != 0:
-        # 1
+    while len(locs) != 0:
         v = locs.pop(0)
-        preorders[v] = c
-        c+=1
-        # 2
-        s.insert(0, v)
-        p.insert(0, v)
-        # 3
-        for trans in pea.phases[v]:
-            # 3.1
-            w = trans.dst
-            if preorders[w] == 0:
-                locs.insert(0, w)
-                scc = scc | find_SCCs(pea, locs, s, p, c, preorders)
-            # 3.2
-            elif w in s:
-                for loc in p:
-                    if preorders[loc] > preorders[w]:
-                        p.pop(0)
-                    else:
+        if v not in discovered:
+            discovered.append(v)
+            # 1
+            preorders[v] = c
+            c+=1
+            # 2
+            s.insert(0, v)
+            p.insert(0, v)
+            # 3
+            for trans in pea.phases[v]:
+                # 3.1
+                w = trans.dst
+                if preorders[w] == 0:
+                    scc = scc | find_SCCs(pea, [w], s, p, c, preorders, discovered)
+                # 3.2
+                elif w in s:
+                    for loc in p:
+                        if preorders[loc] > preorders[w]:
+                            p.pop(0)
+                        else:
+                            break
+            # 4
+            if v == p[0]:
+                new_scc = []
+                while True:
+                    loc_n = s.pop(0)
+                    new_scc.append(loc_n)
+                    if loc_n == v:        
                         break
-        # 4
-        if v == p[0]:
-            new_scc = []
-            while True:
-                loc = s.pop(0)
-                new_scc.append(loc)
-                if loc == v:
-                    p.pop(0)
-                    break
-            scc.add(frozenset(new_scc))
+                p.pop(0)
+                scc.add(frozenset(new_scc))
     return scc
 
 # refine partitions - check if all partitions are refined; send non-refined ones for refining
@@ -182,7 +183,10 @@ class TestPEAReduction(TestCase):
             self.assertLessEqual(len(red_pea.phases.keys()), len(pea.phases.keys()))
             
             # stats dump
-            print(f'Percentage of states reduced: {100 - ((len(red_pea.phases.keys())/len(pea.phases.keys())) * 100)}')
+            if (len(pea.phases.keys())-1) == 0:
+                print('Percentage of states reduced: 0')
+            else:
+                print(f'Percentage of states reduced: {100 - (((len(red_pea.phases.keys())-1)/(len(pea.phases.keys())-1)) * 100)}')
             trans_og = 0
             for trans in pea.phases:
                 trans_og += len(pea.phases[trans])
@@ -198,9 +202,9 @@ class TestPEAReduction(TestCase):
             self.assertTrue(And(*[loc.state_invariant.Implies(Or(*[loc_red.state_invariant for loc_red in get_initial_locations(red_pea)])) for loc in get_initial_locations(pea)]))
             
 def demo():
-    TestPEAReduction().test_pea_reduction()
+    # TestPEAReduction().test_pea_reduction()
 
-    expressions, ct_str, _ = testcases['duration_bound_l_globally']
+    expressions, ct_str, _ = testcases['response_delay_after']
     ct = CountertraceTransformer(expressions).transform(get_countertrace_parser().parse(ct_str))
     pea = build_automaton(ct)
     init_parts = initial_partitions(pea)
